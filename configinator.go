@@ -5,8 +5,8 @@ import (
 	"os"
 	"reflect"
 
-	"github.com/app-nerds/configinator/container"
-	"github.com/app-nerds/configinator/env"
+	"github.com/adampresley/configinator/container"
+	"github.com/adampresley/configinator/env"
 )
 
 /*
@@ -14,9 +14,9 @@ Behold initializes a provided struct with values from defaults,
 environment, .env file, and flags. It does this by adding tags to your
 struct. For example:
 
-  type Config struct {
-	  Host string `flag:"host" env:"HOST" default:"localhost:8080" description:"Host and port to bind to"`
-  }
+	  type Config struct {
+		  Host string `flag:"host" env:"HOST" default:"localhost:8080" description:"Host and port to bind to"`
+	  }
 
 The above example will accept a command line flag of "host",
 or an environment variable named "HOST". If none of the above
