@@ -33,13 +33,17 @@ var (
 	}
 )
 
-/*
-Container is a host to a given struct field and it's tag configuration. It is
-here where the logic to get values and determine if values are set as flags,
-env, etc.. is done.
-*/
-type Container struct {
-	boolValue    *bool
+// Generic container interface for type-safe value resolution
+type Container[T any] interface {
+	GetEnvValue() (T, bool)
+	GetEnvFileValue() (T, bool)
+	GetFlagValue() (T, bool)
+	SetConfigValue(T)
+	GetDefaultValue() T
+}
+
+// Base container holds common fields and methods
+type baseContainer struct {
 	config       any
 	configValue  reflect.Value
 	defaultValue string
@@ -48,67 +52,171 @@ type Container struct {
 	envName      string
 	field        reflect.StructField
 	fieldName    string
-	fieldType    string
 	fieldValue   reflect.Value
 	flagName     string
-	floatValue   *float64
-	intValue     *int
-	stringValue  *string
-	timeValue    *string
 }
 
-/*
-New creates a new Container. This will verify that the struct
-field can be set and has the required tags.
-*/
-func New(config any, index int, envFile map[string]string) (*Container, error) {
+type BoolContainer struct {
+	baseContainer
+	flagValue *bool
+}
+
+type IntContainer struct {
+	baseContainer
+	flagValue *int
+}
+
+type Float64Container struct {
+	baseContainer
+	flagValue *float64
+}
+
+type StringContainer struct {
+	baseContainer
+	flagValue *string
+}
+
+type TimeContainer struct {
+	baseContainer
+	flagValue *string
+}
+
+func newBaseContainer(config any, index int, envFile map[string]string) (baseContainer, error) {
 	var (
-		hasFlag bool
+		hasFlag  bool
+		flagName string
 	)
 
 	t := reflect.TypeOf(config).Elem()
+	configValue := reflect.ValueOf(config).Elem()
 
-	result := &Container{
-		config:    config,
-		envFile:   envFile,
-		fieldType: strings.ToLower(t.Field(index).Type.String()),
-
-		configValue: reflect.ValueOf(config).Elem(),
-		field:       t.Field(index),
-		fieldName:   t.Field(index).Name,
+	if !configValue.Field(index).CanSet() {
+		return baseContainer{}, ErrCantSet
 	}
 
-	/*
-	 * If this field doesn't have a flag name, or is private and
-	 * cannot be set, return an error
-	 */
-	canSet := result.configValue.Field(index).CanSet()
-
-	if !canSet {
-		return result, ErrCantSet
-	}
-
-	result.flagName, hasFlag = result.field.Tag.Lookup(TagFlagName)
+	flagName, hasFlag = t.Field(index).Tag.Lookup(TagFlagName)
 
 	if !hasFlag {
-		return result, ErrNoFlagName
+		return baseContainer{}, ErrNoFlagName
 	}
 
-	result.fieldValue = result.configValue.Field(index)
-	result.envName = result.field.Tag.Get(TagEnvName)
-	result.defaultValue = result.field.Tag.Get(TagDefaultValue)
-	result.description = result.field.Tag.Get(TagDescription)
+	return baseContainer{
+		config:       config,
+		configValue:  configValue,
+		defaultValue: t.Field(index).Tag.Get(TagDefaultValue),
+		description:  t.Field(index).Tag.Get(TagDescription),
+		envFile:      envFile,
+		envName:      t.Field(index).Tag.Get(TagEnvName),
+		field:        t.Field(index),
+		fieldName:    t.Field(index).Name,
+		fieldValue:   configValue.Field(index),
+		flagName:     flagName,
+	}, nil
+}
+
+func NewBool(config any, index int, envFile map[string]string) (Container[bool], error) {
+	base, err := newBaseContainer(config, index, envFile)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &BoolContainer{baseContainer: base}
 
 	if !flag.Parsed() {
-		result.addFlag()
+		result.flagValue = flag.Bool(result.flagName, result.GetDefaultValue(), result.description)
 	}
-	result.SetDefaultValueOnConfig()
+
+	result.SetConfigValue(result.GetDefaultValue())
 	return result, nil
 }
 
-func (c *Container) EnvBool() (bool, bool) {
-	value := os.Getenv(c.envName)
+func NewInt(config any, index int, envFile map[string]string) (Container[int], error) {
+	base, err := newBaseContainer(config, index, envFile)
+	if err != nil {
+		return nil, err
+	}
 
+	result := &IntContainer{baseContainer: base}
+
+	if !flag.Parsed() {
+		result.flagValue = flag.Int(result.flagName, result.GetDefaultValue(), result.description)
+	}
+
+	result.SetConfigValue(result.GetDefaultValue())
+	return result, nil
+}
+
+func NewFloat64(config any, index int, envFile map[string]string) (Container[float64], error) {
+	base, err := newBaseContainer(config, index, envFile)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &Float64Container{baseContainer: base}
+
+	if !flag.Parsed() {
+		result.flagValue = flag.Float64(result.flagName, result.GetDefaultValue(), result.description)
+	}
+
+	result.SetConfigValue(result.GetDefaultValue())
+	return result, nil
+}
+
+func NewString(config any, index int, envFile map[string]string) (Container[string], error) {
+	base, err := newBaseContainer(config, index, envFile)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &StringContainer{baseContainer: base}
+
+	if !flag.Parsed() {
+		result.flagValue = flag.String(result.flagName, result.GetDefaultValue(), result.description)
+	}
+
+	result.SetConfigValue(result.GetDefaultValue())
+	return result, nil
+}
+
+func NewTime(config any, index int, envFile map[string]string) (Container[time.Time], error) {
+	base, err := newBaseContainer(config, index, envFile)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &TimeContainer{baseContainer: base}
+
+	if !flag.Parsed() {
+		result.flagValue = flag.String(result.flagName, result.defaultValue, result.description)
+	}
+
+	result.SetConfigValue(result.GetDefaultValue())
+	return result, nil
+}
+
+func New(config any, index int, envFile map[string]string) (any, error) {
+	t := reflect.TypeOf(config).Elem()
+	fieldType := strings.ToLower(t.Field(index).Type.String())
+
+	switch fieldType {
+	case "bool":
+		return NewBool(config, index, envFile)
+	case "int":
+		return NewInt(config, index, envFile)
+	case "float64":
+		return NewFloat64(config, index, envFile)
+	case "string":
+		return NewString(config, index, envFile)
+	case "time.time":
+		return NewTime(config, index, envFile)
+	default:
+		return nil, fmt.Errorf("unsupported field type: %s", fieldType)
+	}
+}
+
+// BoolContainer methods
+func (c *BoolContainer) GetEnvValue() (bool, bool) {
+	value := os.Getenv(c.envName)
 	if value != "" {
 		if result, err := strconv.ParseBool(value); err == nil {
 			return result, true
@@ -118,51 +226,7 @@ func (c *Container) EnvBool() (bool, bool) {
 	return false, false
 }
 
-func (c *Container) EnvFloat() (float64, bool) {
-	value := os.Getenv(c.envName)
-
-	if value != "" {
-		if result, err := strconv.ParseFloat(value, 64); err == nil {
-			return result, true
-		}
-	}
-
-	return 0.0, false
-}
-
-func (c *Container) EnvInt() (int, bool) {
-	value := os.Getenv(c.envName)
-
-	if value != "" {
-		if result, err := strconv.Atoi(value); err == nil {
-			return result, true
-		}
-	}
-
-	return 0, false
-}
-
-func (c *Container) EnvString() (string, bool) {
-	value := os.Getenv(c.envName)
-
-	if value != "" {
-		return value, true
-	}
-
-	return value, false
-}
-
-func (c *Container) EnvTime() (time.Time, bool) {
-	value := os.Getenv(c.envName)
-
-	if value != "" {
-		return c.parseTime(value), true
-	}
-
-	return time.Time{}, false
-}
-
-func (c *Container) EnvFileBool() (bool, bool) {
+func (c *BoolContainer) GetEnvFileValue() (bool, bool) {
 	if value, ok := c.envFile[c.envName]; ok {
 		if result, err := strconv.ParseBool(value); err == nil {
 			return result, true
@@ -172,229 +236,183 @@ func (c *Container) EnvFileBool() (bool, bool) {
 	return false, false
 }
 
-func (c *Container) EnvFileFloat() (float64, bool) {
-	if value, ok := c.envFile[c.envName]; ok {
-		if result, err := strconv.ParseFloat(value, 64); err == nil {
-			return result, true
-		}
-	}
-
-	return 0.0, false
-}
-
-func (c *Container) EnvFileInt() (int, bool) {
-	if value, ok := c.envFile[c.envName]; ok {
-		if result, err := strconv.Atoi(value); err == nil {
-			return result, true
-		}
-	}
-
-	return 0, false
-}
-
-func (c *Container) EnvFileString() (string, bool) {
-	if value, ok := c.envFile[c.envName]; ok {
-		return value, true
-	}
-
-	return "", false
-}
-
-func (c *Container) EnvFileTime() (time.Time, bool) {
-	if value, ok := c.envFile[c.envName]; ok {
-		return c.parseTime(value), true
-	}
-
-	return time.Time{}, false
-}
-
-func (c *Container) FlagBool() (bool, bool) {
-	if c.boolValue != nil && *c.boolValue != c.defaultValueToBool() {
-		return *c.boolValue, true
+func (c *BoolContainer) GetFlagValue() (bool, bool) {
+	if c.flagValue != nil && *c.flagValue != c.GetDefaultValue() {
+		return *c.flagValue, true
 	}
 
 	return false, false
 }
 
-func (c *Container) FlagFloat() (float64, bool) {
-	if c.floatValue != nil && *c.floatValue != c.defaultValueToFloat() {
-		return *c.floatValue, true
-	}
-
-	return 0.0, false
-}
-
-func (c *Container) FlagInt() (int, bool) {
-	if c.intValue != nil && *c.intValue != c.defaultValueToInt() {
-		return *c.intValue, true
-	}
-
-	return 0, false
-}
-
-func (c *Container) FlagString() (string, bool) {
-	if c.stringValue != nil && *c.stringValue != c.defaultValueToString() {
-		return *c.stringValue, true
-	}
-
-	return "", false
-}
-
-func (c *Container) FlagTime() (time.Time, bool) {
-	if c.timeValue != nil && *c.timeValue != c.defaultValue {
-		return c.parseTime(*c.timeValue), true
-	}
-
-	return time.Time{}, false
-}
-
-func (c *Container) IsBool() bool {
-	return c.fieldType == "bool"
-}
-
-func (c *Container) IsFloat() bool {
-	return c.fieldType == "float64"
-}
-
-func (c *Container) IsInt() bool {
-	return c.fieldType == "int"
-}
-
-func (c *Container) IsString() bool {
-	return c.fieldType == "string"
-}
-
-func (c *Container) IsTime() bool {
-	return c.fieldType == "time.time"
-}
-
-func (c *Container) SetConfigBool(value bool) {
+func (c *BoolContainer) SetConfigValue(value bool) {
 	c.fieldValue.SetBool(value)
 }
 
-func (c *Container) SetConfigFloat(value float64) {
-	c.fieldValue.SetFloat(value)
-}
-
-func (c *Container) SetConfigInt(value int) {
-	c.fieldValue.SetInt(int64(value))
-}
-
-func (c *Container) SetConfigString(value string) {
-	c.fieldValue.SetString(value)
-}
-
-func (c *Container) SetConfigTime(value time.Time) {
-	c.fieldValue.Set(reflect.ValueOf(value))
-}
-
-func (c *Container) SetDefaultValueOnConfig() {
-	if c.IsBool() {
-		c.SetConfigBool(c.defaultValueToBool())
-	}
-
-	if c.IsFloat() {
-		c.SetConfigFloat(c.defaultValueToFloat())
-	}
-
-	if c.IsInt() {
-		c.SetConfigInt(c.defaultValueToInt())
-	}
-
-	if c.IsString() {
-		c.SetConfigString(c.defaultValueToString())
-	}
-
-	if c.IsTime() {
-		c.SetConfigTime(c.defaultValueToTime())
-	}
-}
-
-func (c *Container) addFlag() {
-	if c.IsBool() {
-		c.boolValue = flag.Bool(c.flagName, c.defaultValueToBool(), c.description)
-	}
-
-	if c.IsFloat() {
-		c.floatValue = flag.Float64(c.flagName, c.defaultValueToFloat(), c.description)
-	}
-
-	if c.IsInt() {
-		c.intValue = flag.Int(c.flagName, c.defaultValueToInt(), c.description)
-	}
-
-	if c.IsString() {
-		c.stringValue = flag.String(c.flagName, c.defaultValueToString(), c.description)
-	}
-
-	if c.IsTime() {
-		c.timeValue = flag.String(c.flagName, c.defaultValueToString(), c.description)
-	}
-}
-
-func (c *Container) defaultValueToBool() bool {
-	var (
-		err    error
-		result bool
-	)
-
-	if result, err = strconv.ParseBool(c.defaultValue); err != nil {
-		return false
-	}
-
-	return result
-}
-
-func (c *Container) defaultValueToFloat() float64 {
-	var (
-		err    error
-		result float64
-	)
-
-	if result, err = strconv.ParseFloat(c.defaultValue, 64); err != nil {
-		return 0.0
-	}
-
-	return result
-}
-
-func (c *Container) defaultValueToInt() int {
-	var (
-		err    error
-		result int
-	)
-
-	if result, err = strconv.Atoi(c.defaultValue); err != nil {
-		return 0
-	}
-
-	return result
-}
-
-func (c *Container) defaultValueToString() string {
-	return c.defaultValue
-}
-
-func (c *Container) defaultValueToTime() time.Time {
-	if !c.isTime(c.defaultValue) {
-		return time.Time{}
-	}
-
-	result := c.parseTime(c.defaultValue)
-	return result
-}
-
-func (c *Container) isTime(value string) bool {
-	for _, f := range timeFormats {
-		if _, err := time.Parse(f, value); err == nil {
-			return true
-		}
+func (c *BoolContainer) GetDefaultValue() bool {
+	if result, err := strconv.ParseBool(c.defaultValue); err == nil {
+		return result
 	}
 
 	return false
 }
 
-func (c *Container) parseTime(value string) time.Time {
+// IntContainer methods
+func (c *IntContainer) GetEnvValue() (int, bool) {
+	value := os.Getenv(c.envName)
+	if value != "" {
+		if result, err := strconv.Atoi(value); err == nil {
+			return result, true
+		}
+	}
+
+	return 0, false
+}
+
+func (c *IntContainer) GetEnvFileValue() (int, bool) {
+	if value, ok := c.envFile[c.envName]; ok {
+		if result, err := strconv.Atoi(value); err == nil {
+			return result, true
+		}
+	}
+
+	return 0, false
+}
+
+func (c *IntContainer) GetFlagValue() (int, bool) {
+	if c.flagValue != nil && *c.flagValue != c.GetDefaultValue() {
+		return *c.flagValue, true
+	}
+
+	return 0, false
+}
+
+func (c *IntContainer) SetConfigValue(value int) {
+	c.fieldValue.SetInt(int64(value))
+}
+
+func (c *IntContainer) GetDefaultValue() int {
+	if result, err := strconv.Atoi(c.defaultValue); err == nil {
+		return result
+	}
+
+	return 0
+}
+
+// Float64Container methods
+func (c *Float64Container) GetEnvValue() (float64, bool) {
+	value := os.Getenv(c.envName)
+	if value != "" {
+		if result, err := strconv.ParseFloat(value, 64); err == nil {
+			return result, true
+		}
+	}
+
+	return 0.0, false
+}
+
+func (c *Float64Container) GetEnvFileValue() (float64, bool) {
+	if value, ok := c.envFile[c.envName]; ok {
+		if result, err := strconv.ParseFloat(value, 64); err == nil {
+			return result, true
+		}
+	}
+
+	return 0.0, false
+}
+
+func (c *Float64Container) GetFlagValue() (float64, bool) {
+	if c.flagValue != nil && *c.flagValue != c.GetDefaultValue() {
+		return *c.flagValue, true
+	}
+
+	return 0.0, false
+}
+
+func (c *Float64Container) SetConfigValue(value float64) {
+	c.fieldValue.SetFloat(value)
+}
+
+func (c *Float64Container) GetDefaultValue() float64 {
+	if result, err := strconv.ParseFloat(c.defaultValue, 64); err == nil {
+		return result
+	}
+
+	return 0.0
+}
+
+// StringContainer methods
+func (c *StringContainer) GetEnvValue() (string, bool) {
+	value := os.Getenv(c.envName)
+	if value != "" {
+		return value, true
+	}
+
+	return "", false
+}
+
+func (c *StringContainer) GetEnvFileValue() (string, bool) {
+	if value, ok := c.envFile[c.envName]; ok {
+		return value, true
+	}
+
+	return "", false
+}
+
+func (c *StringContainer) GetFlagValue() (string, bool) {
+	if c.flagValue != nil && *c.flagValue != c.GetDefaultValue() {
+		return *c.flagValue, true
+	}
+
+	return "", false
+}
+
+func (c *StringContainer) SetConfigValue(value string) {
+	c.fieldValue.SetString(value)
+}
+
+func (c *StringContainer) GetDefaultValue() string {
+	return c.defaultValue
+}
+
+// TimeContainer methods
+func (c *TimeContainer) GetEnvValue() (time.Time, bool) {
+	value := os.Getenv(c.envName)
+	if value != "" {
+		return c.parseTime(value), true
+	}
+
+	return time.Time{}, false
+}
+
+func (c *TimeContainer) GetEnvFileValue() (time.Time, bool) {
+	if value, ok := c.envFile[c.envName]; ok {
+		return c.parseTime(value), true
+	}
+
+	return time.Time{}, false
+}
+
+func (c *TimeContainer) GetFlagValue() (time.Time, bool) {
+	if c.flagValue != nil && *c.flagValue != c.defaultValue {
+		return c.parseTime(*c.flagValue), true
+	}
+
+	return time.Time{}, false
+}
+
+func (c *TimeContainer) SetConfigValue(value time.Time) {
+	c.fieldValue.Set(reflect.ValueOf(value))
+}
+
+func (c *TimeContainer) GetDefaultValue() time.Time {
+	if !c.isTime(c.defaultValue) {
+		return time.Time{}
+	}
+
+	return c.parseTime(c.defaultValue)
+}
+
+func (c *TimeContainer) parseTime(value string) time.Time {
 	for _, f := range timeFormats {
 		if t, err := time.Parse(f, value); err == nil {
 			return t
@@ -402,4 +420,14 @@ func (c *Container) parseTime(value string) time.Time {
 	}
 
 	return time.Time{}
+}
+
+func (c *TimeContainer) isTime(value string) bool {
+	for _, f := range timeFormats {
+		if _, err := time.Parse(f, value); err == nil {
+			return true
+		}
+	}
+
+	return false
 }

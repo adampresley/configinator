@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 	"reflect"
+	"time"
 
 	"github.com/adampresley/configinator/container"
 	"github.com/adampresley/configinator/env"
@@ -24,11 +25,11 @@ are provided then the value from 'default' is used.
 
 If an .env file is found that will be read and used.
 */
-func Behold(config interface{}) {
+func Behold(config any) {
 	var (
 		err        error
 		index      int
-		containers []*container.Container
+		containers []any
 	)
 
 	envFile := make(map[string]string)
@@ -46,11 +47,11 @@ func Behold(config interface{}) {
 	 * Read the type info for this struct
 	 */
 	t := reflect.TypeOf(config).Elem()
-	containers = make([]*container.Container, t.NumField())
+	containers = make([]any, t.NumField())
 
 	/*
 	 * First setup each field of the config struct. These are stored in "containers".
-	 * Each container know the field type, value, env name, flag name, and adds
+	 * Each container knows the field type, value, env name, flag name, and adds
 	 * to the provided flag set.
 	 */
 	for index = 0; index < t.NumField(); index++ {
@@ -65,82 +66,40 @@ func Behold(config interface{}) {
 	}
 
 	/*
-	 * Set the values in the config struct. They already have default value set.
-	 * So first we check to see if there is an environment variable. Then we
-	 * check to see if there is an environment file value. Finally we check for a
-	 * flag value.
+	 * Set the values in the config struct following precedence rules.
+	 * They already have default values set (precedence 1).
 	 */
 	for index = 0; index < t.NumField(); index++ {
 		c := containers[index]
 
-		if c.IsBool() {
-			if value, ok := c.EnvBool(); ok {
-				c.SetConfigBool(value)
-			}
-
-			if value, ok := c.EnvFileBool(); ok {
-				c.SetConfigBool(value)
-			}
-
-			if value, ok := c.FlagBool(); ok {
-				c.SetConfigBool(value)
-			}
+		switch typedContainer := c.(type) {
+		case container.Container[bool]:
+			applyValueWithPrecedence(typedContainer)
+		case container.Container[int]:
+			applyValueWithPrecedence(typedContainer)
+		case container.Container[float64]:
+			applyValueWithPrecedence(typedContainer)
+		case container.Container[string]:
+			applyValueWithPrecedence(typedContainer)
+		case container.Container[time.Time]:
+			applyValueWithPrecedence(typedContainer)
 		}
+	}
+}
 
-		if c.IsFloat() {
-			if value, ok := c.EnvFloat(); ok {
-				c.SetConfigFloat(value)
-			}
+func applyValueWithPrecedence[T any](c container.Container[T]) {
+	// Environment variable (precedence 2)
+	if value, ok := c.GetEnvValue(); ok {
+		c.SetConfigValue(value)
+	}
 
-			if value, ok := c.EnvFileFloat(); ok {
-				c.SetConfigFloat(value)
-			}
+	// Environment file (precedence 3)
+	if value, ok := c.GetEnvFileValue(); ok {
+		c.SetConfigValue(value)
+	}
 
-			if value, ok := c.FlagFloat(); ok {
-				c.SetConfigFloat(value)
-			}
-		}
-
-		if c.IsInt() {
-			if value, ok := c.EnvInt(); ok {
-				c.SetConfigInt(value)
-			}
-
-			if value, ok := c.EnvFileInt(); ok {
-				c.SetConfigInt(value)
-			}
-
-			if value, ok := c.FlagInt(); ok {
-				c.SetConfigInt(value)
-			}
-		}
-
-		if c.IsString() {
-			if value, ok := c.EnvString(); ok {
-				c.SetConfigString(value)
-			}
-
-			if value, ok := c.EnvFileString(); ok {
-				c.SetConfigString(value)
-			}
-
-			if value, ok := c.FlagString(); ok {
-				c.SetConfigString(value)
-			}
-		}
-
-		if c.IsTime() {
-			if value, ok := c.EnvTime(); ok {
-				c.SetConfigTime(value)
-			}
-
-			if value, ok := c.EnvFileTime(); ok {
-				c.SetConfigTime(value)
-			}
-
-			if value, ok := c.FlagTime(); ok {
-				c.SetConfigTime(value)
-			}
-		}
+	// Command line flag (highest precedence)
+	if value, ok := c.GetFlagValue(); ok {
+		c.SetConfigValue(value)
 	}
 }

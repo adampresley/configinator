@@ -104,8 +104,8 @@ func parseLine(line string) (string, string, error) {
 	// Key
 	key = split[0]
 
-	if strings.HasPrefix(key, "export") {
-		key = strings.TrimPrefix(key, "export")
+	if after, ok := strings.CutPrefix(key, "export"); ok {
+		key = after
 	}
 
 	key = strings.TrimSpace(key)
