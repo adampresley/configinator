@@ -83,6 +83,8 @@ func Behold(config any) {
 			applyValueWithPrecedence(typedContainer)
 		case container.Container[time.Time]:
 			applyValueWithPrecedence(typedContainer)
+		case container.Container[time.Duration]:
+			applyValueWithPrecedence(typedContainer)
 		}
 	}
 }

@@ -81,6 +81,12 @@ type TimeContainer struct {
 	flagValue *string
 }
 
+// DurationContainer implements Container[time.Duration]
+type DurationContainer struct {
+	baseContainer
+	flagValue *string
+}
+
 func newBaseContainer(config any, index int, envFile map[string]string) (baseContainer, error) {
 	var (
 		hasFlag  bool
@@ -194,6 +200,22 @@ func NewTime(config any, index int, envFile map[string]string) (Container[time.T
 	return result, nil
 }
 
+func NewDuration(config any, index int, envFile map[string]string) (Container[time.Duration], error) {
+	base, err := newBaseContainer(config, index, envFile)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &DurationContainer{baseContainer: base}
+
+	if !flag.Parsed() {
+		result.flagValue = flag.String(result.flagName, result.defaultValue, result.description)
+	}
+
+	result.SetConfigValue(result.GetDefaultValue())
+	return result, nil
+}
+
 func New(config any, index int, envFile map[string]string) (any, error) {
 	t := reflect.TypeOf(config).Elem()
 	fieldType := strings.ToLower(t.Field(index).Type.String())
@@ -209,6 +231,8 @@ func New(config any, index int, envFile map[string]string) (any, error) {
 		return NewString(config, index, envFile)
 	case "time.time":
 		return NewTime(config, index, envFile)
+	case "time.duration":
+		return NewDuration(config, index, envFile)
 	default:
 		return nil, fmt.Errorf("unsupported field type: %s", fieldType)
 	}
@@ -430,4 +454,44 @@ func (c *TimeContainer) isTime(value string) bool {
 	}
 
 	return false
+}
+
+// DurationContainer methods
+func (c *DurationContainer) GetEnvValue() (time.Duration, bool) {
+	value := os.Getenv(c.envName)
+	if value != "" {
+		if result, err := time.ParseDuration(value); err == nil {
+			return result, true
+		}
+	}
+	return 0, false
+}
+
+func (c *DurationContainer) GetEnvFileValue() (time.Duration, bool) {
+	if value, ok := c.envFile[c.envName]; ok {
+		if result, err := time.ParseDuration(value); err == nil {
+			return result, true
+		}
+	}
+	return 0, false
+}
+
+func (c *DurationContainer) GetFlagValue() (time.Duration, bool) {
+	if c.flagValue != nil && *c.flagValue != c.defaultValue {
+		if result, err := time.ParseDuration(*c.flagValue); err == nil {
+			return result, true
+		}
+	}
+	return 0, false
+}
+
+func (c *DurationContainer) SetConfigValue(value time.Duration) {
+	c.fieldValue.Set(reflect.ValueOf(value))
+}
+
+func (c *DurationContainer) GetDefaultValue() time.Duration {
+	if result, err := time.ParseDuration(c.defaultValue); err == nil {
+		return result
+	}
+	return 0
 }

@@ -274,11 +274,12 @@ func TestBeholdAllDataTypes(t *testing.T) {
 	resetEnv()
 
 	type AllTypesConfig struct {
-		StringVal string    `flag:"str" default:"test"`
-		IntVal    int       `flag:"int" default:"42"`
-		BoolVal   bool      `flag:"bool" default:"true"`
-		FloatVal  float64   `flag:"float" default:"3.14"`
-		TimeVal   time.Time `flag:"time" default:"2023-01-01T00:00:00Z"`
+		StringVal   string        `flag:"str" default:"test"`
+		IntVal      int           `flag:"int" default:"42"`
+		BoolVal     bool          `flag:"bool" default:"true"`
+		FloatVal    float64       `flag:"float" default:"3.14"`
+		TimeVal     time.Time     `flag:"time" default:"2023-01-01T00:00:00Z"`
+		DurationVal time.Duration `flag:"duration" default:"30s"`
 	}
 
 	// Temporarily set os.Args to prevent flag conflicts
@@ -308,5 +309,63 @@ func TestBeholdAllDataTypes(t *testing.T) {
 
 	if !config.TimeVal.Equal(expectedTime) {
 		t.Errorf("Expected TimeVal to be %v, got %v", expectedTime, config.TimeVal)
+	}
+
+	expectedDuration := 30 * time.Second
+	if config.DurationVal != expectedDuration {
+		t.Errorf("Expected DurationVal to be %v, got %v", expectedDuration, config.DurationVal)
+	}
+}
+
+func TestBeholdDurationTypes(t *testing.T) {
+	resetFlags()
+	resetEnv()
+
+	type DurationConfig struct {
+		Timeout  time.Duration `flag:"timeout" env:"TIMEOUT" default:"5m"`
+		Interval time.Duration `flag:"interval" env:"INTERVAL" default:"1h30m"`
+	}
+
+	// Test environment variables
+	os.Setenv("TIMEOUT", "2m30s")
+	os.Setenv("INTERVAL", "45m")
+	defer resetEnv()
+
+	putOldFlagsBack := fixFlags()
+	defer putOldFlagsBack()
+
+	config := &DurationConfig{}
+	Behold(config)
+
+	expectedTimeout := 2*time.Minute + 30*time.Second
+	if config.Timeout != expectedTimeout {
+		t.Errorf("Expected Timeout to be %v, got %v", expectedTimeout, config.Timeout)
+	}
+
+	expectedInterval := 45 * time.Minute
+	if config.Interval != expectedInterval {
+		t.Errorf("Expected Interval to be %v, got %v", expectedInterval, config.Interval)
+	}
+}
+
+func TestBeholdDurationWithFlags(t *testing.T) {
+	resetFlags()
+	resetEnv()
+
+	type DurationConfig struct {
+		Delay time.Duration `flag:"delay" default:"10s"`
+	}
+
+	// Simulate command line arguments
+	oldArgs := os.Args
+	os.Args = []string{"test", "-delay=5m"}
+	defer func() { os.Args = oldArgs }()
+
+	config := &DurationConfig{}
+	Behold(config)
+
+	expectedDelay := 5 * time.Minute
+	if config.Delay != expectedDelay {
+		t.Errorf("Expected Delay to be %v, got %v", expectedDelay, config.Delay)
 	}
 }
