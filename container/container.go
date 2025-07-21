@@ -40,7 +40,7 @@ env, etc.. is done.
 */
 type Container struct {
 	boolValue    *bool
-	config       interface{}
+	config       any
 	configValue  reflect.Value
 	defaultValue string
 	description  string
@@ -61,7 +61,7 @@ type Container struct {
 New creates a new Container. This will verify that the struct
 field can be set and has the required tags.
 */
-func New(config interface{}, index int, envFile map[string]string) (*Container, error) {
+func New(config any, index int, envFile map[string]string) (*Container, error) {
 	var (
 		hasFlag bool
 	)
