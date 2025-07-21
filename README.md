@@ -14,11 +14,16 @@ go get github.com/app-nerds/configinator
 
 ```go
 import (
+  "time"
   "github.com/app-nerds/configinator"
 )
 
 type Config struct {
-  Host string `flag:"host" env:"HOST" default:"localhost:8080" description:"Host and port to bind to"`
+  Host            string    `flag:"host" env:"HOST" default:"localhost:8080" description:"Host and port to bind to"`
+  NumItemsPerPage int       `flag:"n" env:"NUM_ITEMS_PER_PAGE" default:"15" description:"Number of items to display per page"`
+  Debug           bool      `flag:"debug" env:"DEBUG" default:"false" description:"Debug mode"`
+  BaseMultiplier  float64   `flag:"bp" env:"BASE_PRICE" default:"1.25" description:"Base multiplier"`
+  StartTime       time.Time `flag:"st" env:"START_TIME" default:"2025-01-02T13:14:15Z" description:"Time to start"`
 }
 
 func GetConfig() *Config {
@@ -27,6 +32,8 @@ func GetConfig() *Config {
   return &result
 }
 ```
+
+The result of this will be a struct whose values come from the environment or command-line flags.
 
 ## How It Works
 
