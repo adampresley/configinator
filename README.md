@@ -61,6 +61,7 @@ So, for example, if in the above struct you have a default value of `localhost:8
 * float64
 * bool
 * time.Time
+* time.Duration
 
 ### License
 
