@@ -18,7 +18,6 @@ const (
 	TagDescription  string = "description"
 )
 
-// Custom errors
 var (
 	ErrNoFlagName = fmt.Errorf("no flag name")
 	ErrCantSet    = fmt.Errorf("can't set private fields")
@@ -33,7 +32,6 @@ var (
 	}
 )
 
-// Generic container interface for type-safe value resolution
 type Container[T any] interface {
 	GetEnvValue() (T, bool)
 	GetEnvFileValue() (T, bool)
@@ -42,10 +40,7 @@ type Container[T any] interface {
 	GetDefaultValue() T
 }
 
-// Base container holds common fields and methods
 type baseContainer struct {
-	config       any
-	configValue  reflect.Value
 	defaultValue string
 	description  string
 	envFile      map[string]string
@@ -54,6 +49,7 @@ type baseContainer struct {
 	fieldName    string
 	fieldValue   reflect.Value
 	flagName     string
+	hasFlag      bool
 }
 
 type BoolContainer struct {
@@ -87,48 +83,35 @@ type DurationContainer struct {
 	flagValue *string
 }
 
-func newBaseContainer(config any, index int, envFile map[string]string) (baseContainer, error) {
-	var (
-		hasFlag  bool
-		flagName string
-	)
-
-	t := reflect.TypeOf(config).Elem()
-	configValue := reflect.ValueOf(config).Elem()
-
-	if !configValue.Field(index).CanSet() {
+func newBaseContainer(field reflect.StructField, fieldValue reflect.Value, envFile map[string]string) (baseContainer, error) {
+	if !fieldValue.CanSet() {
 		return baseContainer{}, ErrCantSet
 	}
 
-	flagName, hasFlag = t.Field(index).Tag.Lookup(TagFlagName)
-
-	if !hasFlag {
-		return baseContainer{}, ErrNoFlagName
-	}
+	flagName, hasFlag := field.Tag.Lookup(TagFlagName)
 
 	return baseContainer{
-		config:       config,
-		configValue:  configValue,
-		defaultValue: t.Field(index).Tag.Get(TagDefaultValue),
-		description:  t.Field(index).Tag.Get(TagDescription),
+		defaultValue: field.Tag.Get(TagDefaultValue),
+		description:  field.Tag.Get(TagDescription),
 		envFile:      envFile,
-		envName:      t.Field(index).Tag.Get(TagEnvName),
-		field:        t.Field(index),
-		fieldName:    t.Field(index).Name,
-		fieldValue:   configValue.Field(index),
+		envName:      field.Tag.Get(TagEnvName),
+		field:        field,
+		fieldName:    field.Name,
+		fieldValue:   fieldValue,
 		flagName:     flagName,
+		hasFlag:      hasFlag,
 	}, nil
 }
 
-func NewBool(config any, index int, envFile map[string]string) (Container[bool], error) {
-	base, err := newBaseContainer(config, index, envFile)
+func NewBool(field reflect.StructField, fieldValue reflect.Value, envFile map[string]string) (Container[bool], error) {
+	base, err := newBaseContainer(field, fieldValue, envFile)
 	if err != nil {
 		return nil, err
 	}
 
 	result := &BoolContainer{baseContainer: base}
 
-	if !flag.Parsed() {
+	if !flag.Parsed() && result.hasFlag {
 		result.flagValue = flag.Bool(result.flagName, result.GetDefaultValue(), result.description)
 	}
 
@@ -136,15 +119,15 @@ func NewBool(config any, index int, envFile map[string]string) (Container[bool],
 	return result, nil
 }
 
-func NewInt(config any, index int, envFile map[string]string) (Container[int], error) {
-	base, err := newBaseContainer(config, index, envFile)
+func NewInt(field reflect.StructField, fieldValue reflect.Value, envFile map[string]string) (Container[int], error) {
+	base, err := newBaseContainer(field, fieldValue, envFile)
 	if err != nil {
 		return nil, err
 	}
 
 	result := &IntContainer{baseContainer: base}
 
-	if !flag.Parsed() {
+	if !flag.Parsed() && result.hasFlag {
 		result.flagValue = flag.Int(result.flagName, result.GetDefaultValue(), result.description)
 	}
 
@@ -152,15 +135,15 @@ func NewInt(config any, index int, envFile map[string]string) (Container[int], e
 	return result, nil
 }
 
-func NewFloat64(config any, index int, envFile map[string]string) (Container[float64], error) {
-	base, err := newBaseContainer(config, index, envFile)
+func NewFloat64(field reflect.StructField, fieldValue reflect.Value, envFile map[string]string) (Container[float64], error) {
+	base, err := newBaseContainer(field, fieldValue, envFile)
 	if err != nil {
 		return nil, err
 	}
 
 	result := &Float64Container{baseContainer: base}
 
-	if !flag.Parsed() {
+	if !flag.Parsed() && result.hasFlag {
 		result.flagValue = flag.Float64(result.flagName, result.GetDefaultValue(), result.description)
 	}
 
@@ -168,15 +151,15 @@ func NewFloat64(config any, index int, envFile map[string]string) (Container[flo
 	return result, nil
 }
 
-func NewString(config any, index int, envFile map[string]string) (Container[string], error) {
-	base, err := newBaseContainer(config, index, envFile)
+func NewString(field reflect.StructField, fieldValue reflect.Value, envFile map[string]string) (Container[string], error) {
+	base, err := newBaseContainer(field, fieldValue, envFile)
 	if err != nil {
 		return nil, err
 	}
 
 	result := &StringContainer{baseContainer: base}
 
-	if !flag.Parsed() {
+	if !flag.Parsed() && result.hasFlag {
 		result.flagValue = flag.String(result.flagName, result.GetDefaultValue(), result.description)
 	}
 
@@ -184,15 +167,15 @@ func NewString(config any, index int, envFile map[string]string) (Container[stri
 	return result, nil
 }
 
-func NewTime(config any, index int, envFile map[string]string) (Container[time.Time], error) {
-	base, err := newBaseContainer(config, index, envFile)
+func NewTime(field reflect.StructField, fieldValue reflect.Value, envFile map[string]string) (Container[time.Time], error) {
+	base, err := newBaseContainer(field, fieldValue, envFile)
 	if err != nil {
 		return nil, err
 	}
 
 	result := &TimeContainer{baseContainer: base}
 
-	if !flag.Parsed() {
+	if !flag.Parsed() && result.hasFlag {
 		result.flagValue = flag.String(result.flagName, result.defaultValue, result.description)
 	}
 
@@ -200,15 +183,15 @@ func NewTime(config any, index int, envFile map[string]string) (Container[time.T
 	return result, nil
 }
 
-func NewDuration(config any, index int, envFile map[string]string) (Container[time.Duration], error) {
-	base, err := newBaseContainer(config, index, envFile)
+func NewDuration(field reflect.StructField, fieldValue reflect.Value, envFile map[string]string) (Container[time.Duration], error) {
+	base, err := newBaseContainer(field, fieldValue, envFile)
 	if err != nil {
 		return nil, err
 	}
 
 	result := &DurationContainer{baseContainer: base}
 
-	if !flag.Parsed() {
+	if !flag.Parsed() && result.hasFlag {
 		result.flagValue = flag.String(result.flagName, result.defaultValue, result.description)
 	}
 
@@ -216,25 +199,24 @@ func NewDuration(config any, index int, envFile map[string]string) (Container[ti
 	return result, nil
 }
 
-func New(config any, index int, envFile map[string]string) (any, error) {
-	t := reflect.TypeOf(config).Elem()
-	fieldType := strings.ToLower(t.Field(index).Type.String())
+func New(field reflect.StructField, fieldValue reflect.Value, envFile map[string]string) (any, error) {
+	fieldType := strings.ToLower(field.Type.String())
 
 	switch fieldType {
 	case "bool":
-		return NewBool(config, index, envFile)
+		return NewBool(field, fieldValue, envFile)
 	case "int":
-		return NewInt(config, index, envFile)
+		return NewInt(field, fieldValue, envFile)
 	case "float64":
-		return NewFloat64(config, index, envFile)
+		return NewFloat64(field, fieldValue, envFile)
 	case "string":
-		return NewString(config, index, envFile)
+		return NewString(field, fieldValue, envFile)
 	case "time.time":
-		return NewTime(config, index, envFile)
+		return NewTime(field, fieldValue, envFile)
 	case "time.duration":
-		return NewDuration(config, index, envFile)
+		return NewDuration(field, fieldValue, envFile)
 	default:
-		return nil, fmt.Errorf("unsupported field type: %s", fieldType)
+		return nil, nil
 	}
 }
 

@@ -7,7 +7,7 @@ Behold, the **Configinator**! Simply create a struct, annotate it with tags, and
 Installation is easy. 
 
 ```bash
-go get github.com/app-nerds/configinator
+go get github.com/adampresley/configinator
 ```
 
 ### Example
@@ -15,16 +15,20 @@ go get github.com/app-nerds/configinator
 ```go
 import (
   "time"
-  "github.com/app-nerds/configinator"
+  "github.com/adampresley/configinator"
 )
 
+type BaseConfig struct {
+  Host  string `flag:"host" env:"HOST" default:"localhost:8080" description:"Host and port to bind to"`
+  Debug bool   `flag:"debug" env:"DEBUG" default:"false" description:"Debug mode"`
+}
+
 type Config struct {
-  Host            string        `flag:"host" env:"HOST" default:"localhost:8080" description:"Host and port to bind to"`
+  BaseConfig
   NumItemsPerPage int           `flag:"n" env:"NUM_ITEMS_PER_PAGE" default:"15" description:"Number of items to display per page"`
-  Debug           bool          `flag:"debug" env:"DEBUG" default:"false" description:"Debug mode"`
-  BaseMultiplier  float64       `flag:"bp" env:"BASE_PRICE" default:"1.25" description:"Base multiplier"`
-  StartTime       time.Time     `flag:"st" env:"START_TIME" default:"2025-01-02T13:14:15Z" description:"Time to start"`
-  Duration        time.Duration `flag:"d" env:"DURATION" default:"34s" description:"Duration defaults to 34s"`
+  BaseMultiplier  float64       `env:"BASE_PRICE" default:"1.25" description:"Base multiplier"`
+  StartTime       time.Time     `env:"START_TIME" default:"2025-01-02T13:14:15Z" description:"Time to start"`
+  Duration        time.Duration `env:"DURATION" default:"34s" description:"Duration defaults to 34s"`
 }
 
 func GetConfig() *Config {
@@ -34,7 +38,7 @@ func GetConfig() *Config {
 }
 ```
 
-The result of this will be a struct whose values come from the environment or command-line flags.
+The result of this will be a struct whose values come from the environment or command-line flags. As you can see, embedded structs are also respected, allowing for flexible configurations.
 
 ## How It Works
 
@@ -49,10 +53,10 @@ So, for example, if in the above struct you have a default value of `localhost:8
 
 ### Tags
 
-* **flag** - *Requried*. Defines the flag name to look for on the command line.
-* **default** - *Required*. Default value to apply.
-* **env** - Defines the name of an environment variable to look for. This applies to both OS environment and *.env* file variables.
-* **description** - Flag description. Used when displaying flag options on the command line.
+* **flag** - _Optional_. Defines the flag name to look for on the command line.
+* **env** - _Optional_. Defines the name of an environment variable to look for. This applies to both OS environment and *.env* file variables.
+* **default** - _Required_. Default value to apply.
+* **description** - _Optional_. Flag description. Used when displaying flag options on the command line.
 
 ### Supported Data Types
 
@@ -64,8 +68,6 @@ So, for example, if in the above struct you have a default value of `localhost:8
 * time.Duration
 
 ### License
-
-Copyright 2022 App Nerds LLC
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 

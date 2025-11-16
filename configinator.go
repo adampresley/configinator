@@ -28,7 +28,6 @@ If an .env file is found that will be read and used.
 func Behold(config any) {
 	var (
 		err        error
-		index      int
 		containers []any
 	)
 
@@ -44,18 +43,10 @@ func Behold(config any) {
 	}
 
 	/*
-	 * Read the type info for this struct
+	 * Recursively discover all fields to be configured
 	 */
-	t := reflect.TypeOf(config).Elem()
-	containers = make([]any, t.NumField())
-
-	/*
-	 * First setup each field of the config struct. These are stored in "containers".
-	 * Each container knows the field type, value, env name, flag name, and adds
-	 * to the provided flag set.
-	 */
-	for index = 0; index < t.NumField(); index++ {
-		containers[index], _ = container.New(config, index, envFile)
+	if containers, err = collectContainers(reflect.ValueOf(config).Elem(), envFile); err != nil {
+		panic(err)
 	}
 
 	/*
@@ -69,9 +60,7 @@ func Behold(config any) {
 	 * Set the values in the config struct following precedence rules.
 	 * They already have default values set (precedence 1).
 	 */
-	for index = 0; index < t.NumField(); index++ {
-		c := containers[index]
-
+	for _, c := range containers {
 		switch typedContainer := c.(type) {
 		case container.Container[bool]:
 			applyValueWithPrecedence(typedContainer)
@@ -87,6 +76,47 @@ func Behold(config any) {
 			applyValueWithPrecedence(typedContainer)
 		}
 	}
+}
+
+func collectContainers(configValue reflect.Value, envFile map[string]string) ([]any, error) {
+	var (
+		err                error
+		containers         []any
+		embeddedContainers []any
+		c                  any
+	)
+
+	t := configValue.Type()
+
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		fieldValue := configValue.Field(i)
+
+		if field.Anonymous && fieldValue.Kind() == reflect.Struct {
+			if embeddedContainers, err = collectContainers(fieldValue, envFile); err != nil {
+				return nil, err
+			}
+
+			containers = append(containers, embeddedContainers...)
+
+		} else {
+			isConfigField := field.Tag.Get("flag") != "" || field.Tag.Get("env") != "" || field.Tag.Get("default") != ""
+
+			if c, err = container.New(field, fieldValue, envFile); err != nil {
+				if isConfigField {
+					return nil, err
+				} else {
+					continue
+				}
+			}
+
+			if c != nil {
+				containers = append(containers, c)
+			}
+		}
+	}
+
+	return containers, nil
 }
 
 func applyValueWithPrecedence[T any](c container.Container[T]) {

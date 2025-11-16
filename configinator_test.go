@@ -25,6 +25,8 @@ func resetEnv() {
 	os.Unsetenv("DEBUG")
 	os.Unsetenv("TIMEOUT")
 	os.Unsetenv("START_TIME")
+	os.Unsetenv("NO_FLAG")
+	os.Unsetenv("EMBEDDED_HOST")
 }
 
 func fixFlags() func() {
@@ -367,5 +369,91 @@ func TestBeholdDurationWithFlags(t *testing.T) {
 	expectedDelay := 5 * time.Minute
 	if config.Delay != expectedDelay {
 		t.Errorf("Expected Delay to be %v, got %v", expectedDelay, config.Delay)
+	}
+}
+
+type TestConfigNoFlag struct {
+	Host      string `env:"HOST" default:"localhost:8080"`
+	NoFlagVal string `env:"NO_FLAG" default:"default-value"`
+}
+
+func TestBeholdNoFlag(t *testing.T) {
+	resetFlags()
+	resetEnv()
+
+	// Test with environment variable
+	os.Setenv("NO_FLAG", "env-value")
+	defer resetEnv()
+
+	putOldFlagsBack := fixFlags()
+	defer putOldFlagsBack()
+
+	config := &TestConfigNoFlag{}
+	Behold(config)
+
+	if config.NoFlagVal != "env-value" {
+		t.Errorf("Expected NoFlagVal to be 'env-value', got '%s'", config.NoFlagVal)
+	}
+}
+
+func TestBeholdNoFlagDefault(t *testing.T) {
+	resetFlags()
+	resetEnv()
+
+	putOldFlagsBack := fixFlags()
+	defer putOldFlagsBack()
+
+	config := &TestConfigNoFlag{}
+	Behold(config)
+
+	if config.NoFlagVal != "default-value" {
+		t.Errorf("Expected NoFlagVal to be 'default-value', got '%s'", config.NoFlagVal)
+	}
+}
+
+type EmbeddedConfig struct {
+	EmbeddedHost string `env:"EMBEDDED_HOST" default:"embedded:8080"`
+}
+
+type TestConfigEmbedded struct {
+	EmbeddedConfig
+	Port int `flag:"port" default:"9001"`
+}
+
+func TestBeholdEmbedded(t *testing.T) {
+	resetFlags()
+	resetEnv()
+
+	// Test with environment variable
+	os.Setenv("EMBEDDED_HOST", "env-embedded:8080")
+	defer resetEnv()
+
+	putOldFlagsBack := fixFlags()
+	defer putOldFlagsBack()
+
+	config := &TestConfigEmbedded{}
+	Behold(config)
+
+	if config.EmbeddedHost != "env-embedded:8080" {
+		t.Errorf("Expected EmbeddedHost to be 'env-embedded:8080', got '%s'", config.EmbeddedHost)
+	}
+
+	if config.Port != 9001 {
+		t.Errorf("Expected Port to be 9001, got %d", config.Port)
+	}
+}
+
+func TestBeholdEmbeddedDefault(t *testing.T) {
+	resetFlags()
+	resetEnv()
+
+	putOldFlagsBack := fixFlags()
+	defer putOldFlagsBack()
+
+	config := &TestConfigEmbedded{}
+	Behold(config)
+
+	if config.EmbeddedHost != "embedded:8080" {
+		t.Errorf("Expected EmbeddedHost to be 'embedded:8080', got '%s'", config.EmbeddedHost)
 	}
 }
