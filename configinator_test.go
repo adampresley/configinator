@@ -3,6 +3,7 @@ package configinator
 import (
 	"flag"
 	"os"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -27,6 +28,9 @@ func resetEnv() {
 	os.Unsetenv("START_TIME")
 	os.Unsetenv("NO_FLAG")
 	os.Unsetenv("EMBEDDED_HOST")
+	os.Unsetenv("REGIONS")
+	os.Unsetenv("NAMED_REGIONS")
+	os.Unsetenv("FLAG_DEFAULT")
 }
 
 func fixFlags() func() {
@@ -369,6 +373,223 @@ func TestBeholdDurationWithFlags(t *testing.T) {
 	expectedDelay := 5 * time.Minute
 	if config.Delay != expectedDelay {
 		t.Errorf("Expected Delay to be %v, got %v", expectedDelay, config.Delay)
+	}
+}
+
+func TestBeholdStringSliceDefault(t *testing.T) {
+	resetFlags()
+	resetEnv()
+
+	type StringSliceConfig struct {
+		Regions []string `flag:"regions" env:"REGIONS" default:"us-east-1, us-west-2"`
+	}
+
+	putOldFlagsBack := fixFlags()
+	defer putOldFlagsBack()
+
+	config := &StringSliceConfig{}
+	Behold(config)
+
+	expected := []string{"us-east-1", "us-west-2"}
+	if !reflect.DeepEqual(config.Regions, expected) {
+		t.Errorf("Expected Regions to be %v, got %v", expected, config.Regions)
+	}
+}
+
+func TestBeholdStringSliceEnvironmentVariable(t *testing.T) {
+	resetFlags()
+	resetEnv()
+
+	type StringSliceConfig struct {
+		Regions []string `flag:"regions" env:"REGIONS" default:"us-east-1, us-west-2"`
+	}
+
+	os.Setenv("REGIONS", "eu-west-1, ap-south-1")
+	defer resetEnv()
+
+	putOldFlagsBack := fixFlags()
+	defer putOldFlagsBack()
+
+	config := &StringSliceConfig{}
+	Behold(config)
+
+	expected := []string{"eu-west-1", "ap-south-1"}
+	if !reflect.DeepEqual(config.Regions, expected) {
+		t.Errorf("Expected Regions to be %v, got %v", expected, config.Regions)
+	}
+}
+
+func TestBeholdStringSliceEnvFile(t *testing.T) {
+	var err error
+
+	resetFlags()
+	resetEnv()
+
+	type StringSliceConfig struct {
+		Regions []string `flag:"regions" env:"REGIONS" default:"us-east-1, us-west-2"`
+	}
+
+	envContent := `REGIONS=ca-central-1,sa-east-1`
+	err = os.WriteFile(".env", []byte(envContent), 0644)
+	if err != nil {
+		t.Fatalf("Failed to create .env file: %v", err)
+	}
+	defer os.Remove(".env")
+
+	putOldFlagsBack := fixFlags()
+	defer putOldFlagsBack()
+
+	config := &StringSliceConfig{}
+	Behold(config)
+
+	expected := []string{"ca-central-1", "sa-east-1"}
+	if !reflect.DeepEqual(config.Regions, expected) {
+		t.Errorf("Expected Regions to be %v, got %v", expected, config.Regions)
+	}
+}
+
+func TestBeholdStringSliceCommandLineFlag(t *testing.T) {
+	resetFlags()
+	resetEnv()
+
+	type StringSliceConfig struct {
+		Regions []string `flag:"regions" env:"REGIONS" default:"us-east-1, us-west-2"`
+	}
+
+	oldArgs := os.Args
+	os.Args = []string{"test", "-regions=us-gov-west-1,us-gov-east-1"}
+	defer func() { os.Args = oldArgs }()
+
+	config := &StringSliceConfig{}
+	Behold(config)
+
+	expected := []string{"us-gov-west-1", "us-gov-east-1"}
+	if !reflect.DeepEqual(config.Regions, expected) {
+		t.Errorf("Expected Regions to be %v, got %v", expected, config.Regions)
+	}
+}
+
+func TestBeholdStringSlicePrecedence(t *testing.T) {
+	var err error
+
+	resetFlags()
+	resetEnv()
+
+	type StringSliceConfig struct {
+		Regions []string `flag:"regions" env:"REGIONS" default:"us-east-1, us-west-2"`
+	}
+
+	os.Setenv("REGIONS", "env-1,env-2")
+	defer resetEnv()
+
+	envContent := `REGIONS=envfile-1,envfile-2`
+	err = os.WriteFile(".env", []byte(envContent), 0644)
+	if err != nil {
+		t.Fatalf("Failed to create .env file: %v", err)
+	}
+	defer os.Remove(".env")
+
+	oldArgs := os.Args
+	os.Args = []string{"test", "-regions=flag-1,flag-2"}
+	defer func() { os.Args = oldArgs }()
+
+	config := &StringSliceConfig{}
+	Behold(config)
+
+	expected := []string{"flag-1", "flag-2"}
+	if !reflect.DeepEqual(config.Regions, expected) {
+		t.Errorf("Expected Regions to be %v, got %v", expected, config.Regions)
+	}
+}
+
+func TestBeholdStringSliceTrimsAndDropsEmptyItems(t *testing.T) {
+	resetFlags()
+	resetEnv()
+
+	type StringSliceConfig struct {
+		Regions []string `flag:"regions" env:"REGIONS" default:"alpha, beta,, gamma, "`
+	}
+
+	putOldFlagsBack := fixFlags()
+	defer putOldFlagsBack()
+
+	config := &StringSliceConfig{}
+	Behold(config)
+
+	expected := []string{"alpha", "beta", "gamma"}
+	if !reflect.DeepEqual(config.Regions, expected) {
+		t.Errorf("Expected Regions to be %v, got %v", expected, config.Regions)
+	}
+}
+
+func TestBeholdStringSliceNamedStringType(t *testing.T) {
+	resetFlags()
+	resetEnv()
+
+	type Region string
+
+	type StringSliceConfig struct {
+		Regions []Region `flag:"named-regions" env:"NAMED_REGIONS" default:"us-east-1,us-west-2"`
+	}
+
+	os.Setenv("NAMED_REGIONS", "eu-central-1,eu-north-1")
+	defer resetEnv()
+
+	putOldFlagsBack := fixFlags()
+	defer putOldFlagsBack()
+
+	config := &StringSliceConfig{}
+	Behold(config)
+
+	expected := []Region{"eu-central-1", "eu-north-1"}
+	if !reflect.DeepEqual(config.Regions, expected) {
+		t.Errorf("Expected Regions to be %v, got %v", expected, config.Regions)
+	}
+}
+
+func TestBeholdStringSliceEmptyValueOverridesDefault(t *testing.T) {
+	resetFlags()
+	resetEnv()
+
+	type StringSliceConfig struct {
+		Regions []string `flag:"regions" env:"REGIONS" default:"us-east-1, us-west-2"`
+	}
+
+	os.Setenv("REGIONS", "")
+	defer resetEnv()
+
+	putOldFlagsBack := fixFlags()
+	defer putOldFlagsBack()
+
+	config := &StringSliceConfig{}
+	Behold(config)
+
+	expected := []string{}
+	if !reflect.DeepEqual(config.Regions, expected) {
+		t.Errorf("Expected Regions to be %v, got %v", expected, config.Regions)
+	}
+}
+
+func TestBeholdFlagValueMatchingDefaultOverridesEnv(t *testing.T) {
+	resetFlags()
+	resetEnv()
+
+	type FlagDefaultConfig struct {
+		Value string `flag:"flag-default" env:"FLAG_DEFAULT" default:"default-value"`
+	}
+
+	os.Setenv("FLAG_DEFAULT", "env-value")
+	defer resetEnv()
+
+	oldArgs := os.Args
+	os.Args = []string{"test", "-flag-default=default-value"}
+	defer func() { os.Args = oldArgs }()
+
+	config := &FlagDefaultConfig{}
+	Behold(config)
+
+	if config.Value != "default-value" {
+		t.Errorf("Expected Value to be 'default-value', got '%s'", config.Value)
 	}
 }
 

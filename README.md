@@ -29,6 +29,7 @@ type Config struct {
   BaseMultiplier  float64       `env:"BASE_PRICE" default:"1.25" description:"Base multiplier"`
   StartTime       time.Time     `env:"START_TIME" default:"2025-01-02T13:14:15Z" description:"Time to start"`
   Duration        time.Duration `env:"DURATION" default:"34s" description:"Duration defaults to 34s"`
+  Regions         []string      `env:"REGIONS" default:"us-east-1,us-west-2" description:"AWS regions"`
 }
 
 func GetConfig() *Config {
@@ -66,6 +67,10 @@ So, for example, if in the above struct you have a default value of `localhost:8
 * bool
 * time.Time
 * time.Duration
+* []string, including slices of named string types
+
+String slices are parsed from comma-delimited values. Items are trimmed, and empty items are ignored. For example,
+`default:"alpha, beta,, gamma"` becomes `[]string{"alpha", "beta", "gamma"}`.
 
 ### License
 
@@ -74,4 +79,3 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-

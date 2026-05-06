@@ -72,6 +72,11 @@ type StringContainer struct {
 	flagValue *string
 }
 
+type StringSliceContainer struct {
+	baseContainer
+	flagValue *string
+}
+
 type TimeContainer struct {
 	baseContainer
 	flagValue *string
@@ -101,6 +106,22 @@ func newBaseContainer(field reflect.StructField, fieldValue reflect.Value, envFi
 		flagName:     flagName,
 		hasFlag:      hasFlag,
 	}, nil
+}
+
+func (c baseContainer) flagWasSet() bool {
+	var result bool
+
+	if !c.hasFlag {
+		return false
+	}
+
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == c.flagName {
+			result = true
+		}
+	})
+
+	return result
 }
 
 func NewBool(field reflect.StructField, fieldValue reflect.Value, envFile map[string]string) (Container[bool], error) {
@@ -167,6 +188,28 @@ func NewString(field reflect.StructField, fieldValue reflect.Value, envFile map[
 	return result, nil
 }
 
+func NewStringSlice(field reflect.StructField, fieldValue reflect.Value, envFile map[string]string) (Container[[]string], error) {
+	var (
+		err    error
+		base   baseContainer
+		result *StringSliceContainer
+	)
+
+	base, err = newBaseContainer(field, fieldValue, envFile)
+	if err != nil {
+		return nil, err
+	}
+
+	result = &StringSliceContainer{baseContainer: base}
+
+	if !flag.Parsed() && result.hasFlag {
+		result.flagValue = flag.String(result.flagName, result.defaultValue, result.description)
+	}
+
+	result.SetConfigValue(result.GetDefaultValue())
+	return result, nil
+}
+
 func NewTime(field reflect.StructField, fieldValue reflect.Value, envFile map[string]string) (Container[time.Time], error) {
 	base, err := newBaseContainer(field, fieldValue, envFile)
 	if err != nil {
@@ -200,6 +243,10 @@ func NewDuration(field reflect.StructField, fieldValue reflect.Value, envFile ma
 }
 
 func New(field reflect.StructField, fieldValue reflect.Value, envFile map[string]string) (any, error) {
+	if field.Type.Kind() == reflect.Slice && field.Type.Elem().Kind() == reflect.String {
+		return NewStringSlice(field, fieldValue, envFile)
+	}
+
 	fieldType := strings.ToLower(field.Type.String())
 
 	switch fieldType {
@@ -243,7 +290,7 @@ func (c *BoolContainer) GetEnvFileValue() (bool, bool) {
 }
 
 func (c *BoolContainer) GetFlagValue() (bool, bool) {
-	if c.flagValue != nil && *c.flagValue != c.GetDefaultValue() {
+	if c.flagValue != nil && c.flagWasSet() {
 		return *c.flagValue, true
 	}
 
@@ -285,7 +332,7 @@ func (c *IntContainer) GetEnvFileValue() (int, bool) {
 }
 
 func (c *IntContainer) GetFlagValue() (int, bool) {
-	if c.flagValue != nil && *c.flagValue != c.GetDefaultValue() {
+	if c.flagValue != nil && c.flagWasSet() {
 		return *c.flagValue, true
 	}
 
@@ -327,7 +374,7 @@ func (c *Float64Container) GetEnvFileValue() (float64, bool) {
 }
 
 func (c *Float64Container) GetFlagValue() (float64, bool) {
-	if c.flagValue != nil && *c.flagValue != c.GetDefaultValue() {
+	if c.flagValue != nil && c.flagWasSet() {
 		return *c.flagValue, true
 	}
 
@@ -365,7 +412,7 @@ func (c *StringContainer) GetEnvFileValue() (string, bool) {
 }
 
 func (c *StringContainer) GetFlagValue() (string, bool) {
-	if c.flagValue != nil && *c.flagValue != c.GetDefaultValue() {
+	if c.flagValue != nil && c.flagWasSet() {
 		return *c.flagValue, true
 	}
 
@@ -378,6 +425,63 @@ func (c *StringContainer) SetConfigValue(value string) {
 
 func (c *StringContainer) GetDefaultValue() string {
 	return c.defaultValue
+}
+
+// StringSliceContainer methods
+func (c *StringSliceContainer) GetEnvValue() ([]string, bool) {
+	value, ok := os.LookupEnv(c.envName)
+	if ok {
+		return c.parseStringSlice(value), true
+	}
+
+	return []string{}, false
+}
+
+func (c *StringSliceContainer) GetEnvFileValue() ([]string, bool) {
+	if value, ok := c.envFile[c.envName]; ok {
+		return c.parseStringSlice(value), true
+	}
+
+	return []string{}, false
+}
+
+func (c *StringSliceContainer) GetFlagValue() ([]string, bool) {
+	if c.flagValue != nil && c.flagWasSet() {
+		return c.parseStringSlice(*c.flagValue), true
+	}
+
+	return []string{}, false
+}
+
+func (c *StringSliceContainer) SetConfigValue(value []string) {
+	elementType := c.fieldValue.Type().Elem()
+	result := reflect.MakeSlice(c.fieldValue.Type(), 0, len(value))
+
+	for _, item := range value {
+		result = reflect.Append(result, reflect.ValueOf(item).Convert(elementType))
+	}
+
+	c.fieldValue.Set(result)
+}
+
+func (c *StringSliceContainer) GetDefaultValue() []string {
+	return c.parseStringSlice(c.defaultValue)
+}
+
+func (c *StringSliceContainer) parseStringSlice(value string) []string {
+	var result []string
+
+	result = make([]string, 0)
+
+	for _, item := range strings.Split(value, ",") {
+		item = strings.TrimSpace(item)
+
+		if item != "" {
+			result = append(result, item)
+		}
+	}
+
+	return result
 }
 
 // TimeContainer methods
@@ -399,7 +503,7 @@ func (c *TimeContainer) GetEnvFileValue() (time.Time, bool) {
 }
 
 func (c *TimeContainer) GetFlagValue() (time.Time, bool) {
-	if c.flagValue != nil && *c.flagValue != c.defaultValue {
+	if c.flagValue != nil && c.flagWasSet() {
 		return c.parseTime(*c.flagValue), true
 	}
 
@@ -459,7 +563,7 @@ func (c *DurationContainer) GetEnvFileValue() (time.Duration, bool) {
 }
 
 func (c *DurationContainer) GetFlagValue() (time.Duration, bool) {
-	if c.flagValue != nil && *c.flagValue != c.defaultValue {
+	if c.flagValue != nil && c.flagWasSet() {
 		if result, err := time.ParseDuration(*c.flagValue); err == nil {
 			return result, true
 		}
